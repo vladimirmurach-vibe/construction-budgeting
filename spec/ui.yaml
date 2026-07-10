@@ -1,0 +1,223 @@
+application:
+  id: ui-construction-budgeting
+  name: Бюджетирование строительных объектов
+  shell_module: react-dashboard-template
+  language: ru
+  theme: light
+
+navigation:
+  - id: nav-dashboard
+    label: Консолидация
+    route: /dashboard
+    icon: chart-bar
+    roles: [management, governance, budget_analyst]
+    screen_ref: screen-consolidation-dashboard
+
+  - id: nav-scenarios
+    label: Сценарии
+    route: /scenarios
+    icon: document
+    roles: [budget_analyst, project_manager, management]
+    screen_ref: screen-scenario-list
+
+  - id: nav-scenario-grid
+    label: Ввод данных
+    route: /scenarios/:scenarioId/grid
+    icon: table
+    roles: [budget_analyst, project_manager]
+    screen_ref: screen-scenario-grid
+    hidden_in_menu: true
+
+  - id: nav-version-compare
+    label: Сравнение версий
+    route: /scenarios/compare
+    icon: arrows-left-right
+    roles: [budget_analyst, management, governance]
+    screen_ref: screen-version-compare
+
+  - id: nav-reports
+    label: Отчёты
+    route: /reports
+    icon: file-export
+    roles: [management, governance, budget_analyst]
+    screen_ref: screen-reports
+
+  - id: nav-objects
+    label: Объекты
+    route: /objects
+    icon: building
+    roles: [admin, budget_analyst]
+    screen_ref: screen-objects
+
+  - id: nav-import
+    label: Импорт из Excel
+    route: /import
+    icon: upload
+    roles: [admin, budget_analyst]
+    screen_ref: screen-excel-import
+
+  - id: nav-fact-load
+    label: Загрузка факта
+    route: /admin/fact-loading
+    icon: refresh
+    roles: [admin]
+    screen_ref: screen-fact-loading
+
+  - id: nav-users
+    label: Пользователи
+    route: /admin/users
+    icon: users
+    roles: [admin]
+    screen_ref: screen-users
+
+  - id: nav-login
+    label: Вход
+    route: /login
+    icon: lock
+    public: true
+    screen_ref: screen-login
+
+screens:
+  - id: screen-login
+    name: Страница входа
+    route: /login
+    components:
+      - id: comp-login-form
+        type: form
+        fields: [email, password]
+        actions: [authenticate]
+
+  - id: screen-consolidation-dashboard
+    name: Консолидация финансового результата
+    route: /dashboard
+    layout: dashboard
+    components:
+      - id: comp-horizon-filter
+        type: filter
+        fields: [period_from, period_to, scenario_id]
+      - id: comp-consolidation-chart
+        type: chart
+        module_ref: mod-chart-echarts
+        chart_type: line
+        data_source: /api/financial-results/consolidated
+        metrics: [revenue, costs, profit]
+      - id: comp-object-breakdown
+        type: chart
+        module_ref: mod-chart-echarts
+        chart_type: bar
+        data_source: /api/financial-results/by-object
+      - id: comp-summary-cards
+        type: summary
+        metrics: [total_revenue, total_costs, total_profit, objects_count]
+
+  - id: screen-scenario-list
+    name: Список сценариев
+    route: /scenarios
+    components:
+      - id: comp-scenario-table
+        type: crud-table
+        module_ref: react-crud-pages
+        entity_ref: entity-scenario
+        actions: [create, edit, archive, recalculate, open_grid, compare]
+      - id: comp-scenario-filters
+        type: filter
+        fields: [type, scope, status]
+
+  - id: screen-scenario-grid
+    name: Таблица ввода по формам
+    route: /scenarios/:scenarioId/grid
+    components:
+      - id: comp-cashflow-pivot
+        type: pivot-table
+        module_ref: mod-pivot-tabulator
+        entity_ref: entity-cash-flow-line
+        dimensions:
+          rows: [construction_object_name, form_code, line_item]
+          columns: [period]
+        measures: [base_amount, adjustment, consensus_amount, actual_amount]
+        editable_fields: [base_amount, adjustment]
+      - id: comp-grid-toolbar
+        type: toolbar
+        actions: [save, recalculate, completeness_check]
+      - id: comp-recalc-status
+        type: status
+        fields: [calculated_at, recalc_duration]
+
+  - id: screen-version-compare
+    name: Сравнение версий
+    route: /scenarios/compare
+    components:
+      - id: comp-version-selector
+        type: filter
+        fields: [scenario_id_a, scenario_id_b, construction_object_id]
+      - id: comp-compare-table
+        type: pivot-table
+        module_ref: mod-pivot-tabulator
+        data_source: /api/scenarios/compare
+        measures: [amount_a, amount_b, variance, variance_percent]
+      - id: comp-compare-chart
+        type: chart
+        module_ref: mod-chart-echarts
+        chart_type: bar
+        data_source: /api/scenarios/compare/chart
+
+  - id: screen-reports
+    name: Отчёты
+    route: /reports
+    components:
+      - id: comp-report-generator
+        type: form
+        fields: [scenario_id, report_type, format]
+        formats: [pdf, excel]
+        report_types: [consolidated, by_object, comparison]
+        actions: [generate, download]
+      - id: comp-report-history
+        type: table
+        entity_ref: entity-report
+
+  - id: screen-objects
+    name: Строительные объекты
+    route: /objects
+    components:
+      - id: comp-objects-crud
+        type: crud-table
+        module_ref: react-crud-pages
+        entity_ref: entity-construction-object
+
+  - id: screen-excel-import
+    name: Импорт из Excel
+    route: /import
+    components:
+      - id: comp-file-upload
+        type: file-upload
+        accept: [.xlsx, .xls, .csv]
+        module_ref: csv-data-source
+      - id: comp-import-validation
+        type: validation-report
+        data_source: /api/import/validate
+      - id: comp-import-actions
+        type: toolbar
+        actions: [validate, import, rollback]
+
+  - id: screen-fact-loading
+    name: Загрузка фактических данных
+    route: /admin/fact-loading
+    components:
+      - id: comp-fact-schedule
+        type: form
+        fields: [schedule_cron, source_connection]
+      - id: comp-fact-manual-trigger
+        type: button
+        action: trigger_fact_load
+      - id: comp-fact-log
+        type: table
+        data_source: /api/fact-loading/log
+
+  - id: screen-users
+    name: Управление пользователями
+    route: /admin/users
+    components:
+      - id: comp-users-crud
+        type: crud-table
+        module_ref: react-crud-pages
+        entity_ref: entity-user

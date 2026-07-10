@@ -1,0 +1,154 @@
+pattern: clean-architecture-pattern
+pattern_registry_path: methodologies/clean-architecture-pattern
+
+layers:
+  - name: presentation
+    technology: React 18
+    modules: [react-dashboard-template, react-crud-pages, mod-pivot-tabulator, mod-chart-echarts]
+  - name: api
+    technology: FastAPI
+    modules: [fastapi-base, fastapi-crud-generator, auth-jwt]
+  - name: domain
+    description: >
+      Расчёт денежных потоков, финансового результата, консолидация,
+      пересчёт сценариев, сравнение версий
+    modules: [consensus-calculator, adjustment-disaggregation, forecast-aggregation]
+  - name: integration
+    description: Импорт из Excel и загрузка факта из учётных систем
+    modules: [csv-data-source]
+  - name: infrastructure
+    technology: PostgreSQL 14+
+    modules: [postgres-storage]
+
+selected_modules:
+  - id: fastapi-base
+    role: backend-foundation
+    requirements: [REQ-013]
+  - id: auth-jwt
+    role: authentication
+    requirements: [REQ-001, REQ-014]
+  - id: postgres-storage
+    role: persistence
+    requirements: [REQ-002]
+  - id: fastapi-crud-generator
+    role: crud-api
+    requirements: [REQ-002, REQ-003, REQ-011]
+  - id: consensus-calculator
+    role: calculation-engine
+    requirements: [REQ-004, REQ-005, REQ-006]
+    adaptation: >
+      consensus_amount = base_amount + adjustment;
+      financial_result: profit = revenue − costs.
+  - id: adjustment-disaggregation
+    role: correction-distribution
+    requirements: [REQ-004]
+    adaptation: >
+      Распределение корректировки по объектам × форма × период
+      пропорционально base_amount.
+  - id: forecast-aggregation
+    role: consolidation-service
+    requirements: [REQ-006, REQ-007]
+    adaptation: >
+      Агрегация financial_result по construction_object и period
+      на горизонте min(start)..max(end).
+  - id: csv-data-source
+    role: data-import
+    requirements: [REQ-009, REQ-012]
+  - id: react-dashboard-template
+    role: frontend-shell
+    requirements: []
+  - id: react-crud-pages
+    role: crud-ui
+    requirements: [REQ-003, REQ-011]
+  - id: mod-pivot-tabulator
+    role: data-grid
+    requirements: [REQ-004, REQ-008, REQ-010]
+  - id: mod-chart-echarts
+    role: visualization
+    requirements: [REQ-008]
+  - id: clean-architecture-pattern
+    role: architecture-guideline
+    requirements: []
+  - id: basic-security-policy
+    role: security-policy
+    requirements: [REQ-001, REQ-014]
+
+requirement_mapping:
+  - requirement_id: REQ-001
+    module_id: auth-jwt
+    component: AuthMiddleware
+  - requirement_id: REQ-002
+    module_id: postgres-storage
+    component: VersionRepository
+    companion_module: fastapi-crud-generator
+  - requirement_id: REQ-003
+    module_id: fastapi-crud-generator
+    component: ScenarioCRUDRouter
+    companion_module: react-crud-pages
+  - requirement_id: REQ-004
+    module_id: mod-pivot-tabulator
+    component: CashFlowGrid
+    companion_modules: [consensus-calculator, adjustment-disaggregation]
+  - requirement_id: REQ-005
+    module_id: consensus-calculator
+    component: FinancialResultCalculator
+  - requirement_id: REQ-006
+    module_id: consensus-calculator
+    component: RecalculationOrchestrator
+    companion_module: forecast-aggregation
+  - requirement_id: REQ-007
+    module_id: forecast-aggregation
+    component: ConsolidationService
+  - requirement_id: REQ-008
+    module_id: mod-pivot-tabulator
+    component: VersionCompareTable
+    companion_module: mod-chart-echarts
+  - requirement_id: REQ-009
+    module_id: csv-data-source
+    component: FactDataLoader
+  - requirement_id: REQ-010
+    module_id: mod-pivot-tabulator
+    component: ExcelExporter
+    note: PDF-генерация — custom (см. GAP-003)
+  - requirement_id: REQ-011
+    module_id: fastapi-crud-generator
+    component: ConstructionObjectCRUD
+    companion_module: react-crud-pages
+  - requirement_id: REQ-012
+    module_id: csv-data-source
+    component: ExcelImporter
+  - requirement_id: REQ-013
+    module_id: fastapi-base
+    component: CompletenessValidator
+    note: Кастомная логика поверх fastapi-base
+  - requirement_id: REQ-014
+    module_id: auth-jwt
+    component: RoleBasedAccessControl
+    companion_module: basic-security-policy
+
+deployment:
+  type: docker-compose
+  services:
+    - name: frontend
+      port: 3000
+    - name: backend
+      port: 8000
+    - name: postgres
+      port: 5432
+    - name: scheduler
+      description: Планировщик загрузки факта (cron)
+
+integrations:
+  external:
+    - name: accounting-system
+      description: Учётные системы заказчика
+      method: file_exchange
+      connector: csv-data-source
+      status: to_be_defined
+  deferred:
+    - Direct API integration with 1С/SAP
+    - SSO/LDAP authentication
+
+performance:
+  recalculation_sla_minutes: 20
+  version_compare_sla_seconds: 5

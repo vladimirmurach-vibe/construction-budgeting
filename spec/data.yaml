@@ -1,0 +1,283 @@
+entities:
+  - id: entity-construction-object
+    name: Строительный объект
+    description: Строительный проект/объект, единица бюджетирования
+    attributes:
+      - id: obj-id
+        name: id
+        type: uuid
+        required: true
+      - id: obj-name
+        name: name
+        type: string
+        required: true
+      - id: obj-code
+        name: code
+        type: string
+        required: true
+      - id: obj-construction-start
+        name: construction_start
+        type: date
+        required: true
+        description: Дата начала строительства
+      - id: obj-construction-end
+        name: construction_end
+        type: date
+        required: true
+        description: Плановая дата завершения строительства
+      - id: obj-status
+        name: status
+        type: enum
+        values: [planning, in_progress, completed, suspended]
+        required: true
+    relationships:
+      - target: entity-scenario
+        type: one-to-many
+      - target: entity-cash-flow-line
+        type: one-to-many
+
+  - id: entity-scenario
+    name: Сценарий расчёта
+    description: >
+      Версия бюджета или прогноза с возможными корректировками.
+      Может охватывать все объекты или один конкретный объект.
+    attributes:
+      - id: scen-id
+        name: id
+        type: uuid
+        required: true
+      - id: scen-name
+        name: name
+        type: string
+        required: true
+        description: Название версии (например, «Бюджет 2026 v3 — корректировка»)
+      - id: scen-type
+        name: type
+        type: enum
+        values: [budget, forecast]
+        required: true
+      - id: scen-scope
+        name: scope
+        type: enum
+        values: [all_objects, single_object]
+        required: true
+      - id: scen-object-id
+        name: construction_object_id
+        type: uuid
+        required: false
+        description: Заполняется при scope = single_object
+      - id: scen-version-number
+        name: version_number
+        type: integer
+        required: true
+      - id: scen-parent-version-id
+        name: parent_version_id
+        type: uuid
+        required: false
+        description: Ссылка на базовую версию для сравнения
+      - id: scen-status
+        name: status
+        type: enum
+        values: [draft, calculated, approved, archived]
+        required: true
+      - id: scen-calculated-at
+        name: calculated_at
+        type: datetime
+        required: false
+      - id: scen-created-at
+        name: created_at
+        type: datetime
+        required: true
+    relationships:
+      - target: entity-construction-object
+        type: many-to-one
+      - target: entity-cash-flow-line
+        type: one-to-many
+      - target: entity-financial-result
+        type: one-to-many
+
+  - id: entity-cash-flow-line
+    name: Строка денежного потока
+    description: Плановый, скорректированный или фактический денежный поток по периоду
+    attributes:
+      - id: cf-id
+        name: id
+        type: uuid
+        required: true
+      - id: cf-scenario-id
+        name: scenario_id
+        type: uuid
+        required: true
+      - id: cf-object-id
+        name: construction_object_id
+        type: uuid
+        required: true
+      - id: cf-form-code
+        name: form_code
+        type: string
+        required: true
+        description: Код входной формы по методологии заказчика
+      - id: cf-line-item
+        name: line_item
+        type: string
+        required: true
+        description: Статья денежного потока
+      - id: cf-period
+        name: period
+        type: string
+        required: true
+        description: Период в формате YYYY-MM
+      - id: cf-base-amount
+        name: base_amount
+        type: decimal
+        required: true
+        description: Базовое значение (бюджет/прогноз)
+      - id: cf-adjustment
+        name: adjustment
+        type: decimal
+        required: false
+        description: Корректировка сценария
+      - id: cf-consensus-amount
+        name: consensus_amount
+        type: decimal
+        required: true
+        description: Итоговое значение после корректировки
+      - id: cf-actual-amount
+        name: actual_amount
+        type: decimal
+        required: false
+        description: Фактическая сумма из учётной системы
+      - id: cf-source
+        name: source
+        type: enum
+        values: [manual, import, accounting_system]
+        required: true
+    relationships:
+      - target: entity-scenario
+        type: many-to-one
+      - target: entity-construction-object
+        type: many-to-one
+
+  - id: entity-financial-result
+    name: Финансовый результат
+    description: Рассчитанный финансовый результат по объекту или консолидации
+    attributes:
+      - id: fr-id
+        name: id
+        type: uuid
+        required: true
+      - id: fr-scenario-id
+        name: scenario_id
+        type: uuid
+        required: true
+      - id: fr-object-id
+        name: construction_object_id
+        type: uuid
+        required: false
+        description: null — консолидированный результат по всем объектам
+      - id: fr-period
+        name: period
+        type: string
+        required: true
+      - id: fr-revenue
+        name: revenue
+        type: decimal
+        required: true
+      - id: fr-costs
+        name: costs
+        type: decimal
+        required: true
+      - id: fr-profit
+        name: profit
+        type: decimal
+        required: true
+        description: Финансовый результат (выручка − затраты)
+      - id: fr-is-consolidated
+        name: is_consolidated
+        type: boolean
+        required: true
+    relationships:
+      - target: entity-scenario
+        type: many-to-one
+      - target: entity-construction-object
+        type: many-to-one
+
+  - id: entity-input-form
+    name: Входная форма
+    description: Форма ввода данных по методологии заказчика (аналог листа Excel)
+    attributes:
+      - id: form-id
+        name: id
+        type: uuid
+        required: true
+      - id: form-code
+        name: code
+        type: string
+        required: true
+      - id: form-name
+        name: name
+        type: string
+        required: true
+      - id: form-object-bound
+        name: object_bound
+        type: boolean
+        required: true
+        description: Привязана ли форма к конкретному объекту
+
+  - id: entity-report
+    name: Отчёт
+    description: Сформированный отчёт для менеджмента
+    attributes:
+      - id: rpt-id
+        name: id
+        type: uuid
+        required: true
+      - id: rpt-scenario-id
+        name: scenario_id
+        type: uuid
+        required: true
+      - id: rpt-format
+        name: format
+        type: enum
+        values: [pdf, excel]
+        required: true
+      - id: rpt-type
+        name: type
+        type: enum
+        values: [consolidated, by_object, comparison]
+        required: true
+      - id: rpt-generated-at
+        name: generated_at
+        type: datetime
+        required: true
+      - id: rpt-file-path
+        name: file_path
+        type: string
+        required: true
+
+  - id: entity-user
+    name: Пользователь
+    description: Учётная запись сотрудника
+    attributes:
+      - id: user-id
+        name: id
+        type: uuid
+        required: true
+      - id: user-email
+        name: email
+        type: string
+        required: true
+      - id: user-full-name
+        name: full_name
+        type: string
+        required: true
+      - id: user-role
+        name: role
+        type: enum
+        values: [admin, management, governance, budget_analyst, project_manager]
+        required: true
+      - id: user-object-id
+        name: construction_object_id
+        type: uuid
+        required: false
+        description: Привязка руководителя объекта

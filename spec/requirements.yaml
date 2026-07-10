@@ -1,0 +1,283 @@
+requirements:
+  - id: REQ-001
+    title: Аутентификация пользователей
+    description: >
+      Система обеспечивает вход по email и паролю с выдачей JWT-токена
+      для доступа к API.
+    entity_refs:
+      - entity-user
+    priority: high
+    acceptance_criteria:
+      - Пользователь с валидными учётными данными получает JWT-токен
+      - Запросы к защищённым эндпоинтам без токена возвращают 401
+    module_candidates:
+      - id: auth-jwt
+        registry_path: black_boxes/auth-jwt
+        rationale: Готовый модуль JWT-аутентификации.
+
+  - id: REQ-002
+    title: Хранение всех версий расчёта
+    description: >
+      Система хранит все версии сценариев бюджета/прогноза с историей
+      изменений и возможностью обращения к любой сохранённой версии.
+    entity_refs:
+      - entity-scenario
+    priority: high
+    acceptance_criteria:
+      - Каждый пересчёт сохраняется как новая версия с номером и датой
+      - Архивные версии доступны для просмотра и сравнения
+      - Версии не удаляются физически, только архивируются
+    module_candidates:
+      - id: fastapi-crud-generator
+        registry_path: templates/fastapi-crud-generator
+        rationale: CRUD API для сущности «Сценарий расчёта».
+      - id: postgres-storage
+        registry_path: connectors/postgres-storage
+        rationale: Надёжное хранение версий в PostgreSQL.
+
+  - id: REQ-003
+    title: Создание сценариев бюджета/прогноза
+    description: >
+      Бюджетный аналитик создаёт сценарий расчёта (бюджет или прогноз
+      с корректировками) для всех строительных объектов или для одного
+      конкретного объекта.
+    entity_refs:
+      - entity-scenario
+      - entity-construction-object
+    priority: high
+    acceptance_criteria:
+      - Создание сценария с типом budget или forecast
+      - Выбор охвата all_objects или single_object
+      - При single_object — обязательный выбор строительного объекта
+      - Сценарий создаётся в статусе draft
+    module_candidates:
+      - id: fastapi-crud-generator
+        registry_path: templates/fastapi-crud-generator
+        rationale: API для создания и управления сценариями.
+      - id: react-crud-pages
+        registry_path: templates/react-crud-pages
+        rationale: UI-форма создания сценария.
+
+  - id: REQ-004
+    title: Ввод и корректировка данных по формам
+    description: >
+      Пользователь вводит и корректирует данные по входным формам
+      методологии заказчика в интерактивной таблице, включая корректировки
+      на агрегированном уровне.
+    entity_refs:
+      - entity-cash-flow-line
+      - entity-input-form
+    priority: high
+    acceptance_criteria:
+      - Отображение данных по формам и периодам в таблице
+      - Inline-редактирование base_amount и adjustment
+      - Автоматический пересчёт consensus_amount при изменении корректировки
+      - Визуальная индикация изменённых ячеек
+    module_candidates:
+      - id: mod-pivot-tabulator
+        registry_path: source_code/mod-pivot-tabulator
+        rationale: Таблица с группировкой, агрегацией и редактированием ячеек.
+      - id: consensus-calculator
+        registry_path: templates/consensus-calculator
+        rationale: Пересчёт итогового значения base + adjustment.
+      - id: adjustment-disaggregation
+        registry_path: templates/adjustment-disaggregation
+        rationale: Распределение корректировки с агрегированного уровня на детальные строки.
+
+  - id: REQ-005
+    title: Расчёт денежных потоков и финансового результата
+    description: >
+      Система рассчитывает денежные потоки и финансовый результат
+      (выручка, затраты, прибыль) по каждому строительному объекту
+      на горизонте планирования.
+    entity_refs:
+      - entity-cash-flow-line
+      - entity-financial-result
+      - entity-construction-object
+    priority: high
+    acceptance_criteria:
+      - Расчёт profit = revenue − costs по каждому объекту и периоду
+      - Результаты соответствуют методологии Excel-модели заказчика
+      - Расчёт охватывает период от construction_start до construction_end
+    module_candidates:
+      - id: consensus-calculator
+        registry_path: templates/consensus-calculator
+        rationale: Согласованный пересчёт итоговых значений на всех уровнях.
+
+  - id: REQ-006
+    title: Быстрый пересчёт сценария
+    description: >
+      Система выполняет полный пересчёт сценария (денежные потоки,
+      финансовый результат, консолидация) за время не более 20 минут.
+    entity_refs:
+      - entity-scenario
+      - entity-cash-flow-line
+      - entity-financial-result
+    priority: high
+    acceptance_criteria:
+      - Запуск пересчёта по кнопке или при сохранении корректировок
+      - Полный пересчёт портфеля объектов завершается за ≤ 20 минут
+      - Статус сценария переходит в calculated с фиксацией calculated_at
+    module_candidates:
+      - id: consensus-calculator
+        registry_path: templates/consensus-calculator
+        rationale: Мгновенный пересчёт consensus при изменении корректировок.
+      - id: forecast-aggregation
+        registry_path: templates/forecast-aggregation
+        rationale: Агрегация данных при пересчёте консолидации.
+
+  - id: REQ-007
+    title: Консолидация по всем объектам
+    description: >
+      Система автоматически консолидирует финансовый результат по всем
+      строительным объектам на полном горизонте планирования — от начала
+      строительства первого объекта до завершения последнего.
+    entity_refs:
+      - entity-financial-result
+      - entity-construction-object
+    priority: high
+    acceptance_criteria:
+      - Консолидированный результат с is_consolidated = true
+      - Суммирование по всем объектам на каждый период горизонта
+      - Горизонт = min(construction_start) .. max(construction_end)
+    module_candidates:
+      - id: forecast-aggregation
+        registry_path: templates/forecast-aggregation
+        rationale: Динамическая агрегация по иерархиям объектов и периодов.
+
+  - id: REQ-008
+    title: Сравнение версий сценариев
+    description: >
+      Пользователь моментально сравнивает текущий сценарий с любой
+      сохранённой версией бюджета по ключевым показателям.
+    entity_refs:
+      - entity-scenario
+      - entity-financial-result
+      - entity-cash-flow-line
+    priority: high
+    acceptance_criteria:
+      - Выбор двух версий для сравнения
+      - Отображение отклонений по суммам и процентам
+      - Время отклика сравнения — не более 5 секунд
+    module_candidates:
+      - id: mod-chart-echarts
+        registry_path: source_code/mod-chart-echarts
+        rationale: Визуализация отклонений между версиями.
+      - id: mod-pivot-tabulator
+        registry_path: source_code/mod-pivot-tabulator
+        rationale: Табличное сравнение показателей двух версий.
+
+  - id: REQ-009
+    title: Автоматическая загрузка фактических данных
+    description: >
+      Система автоматически загружает фактические данные из учётных систем
+      и обновляет поле actual_amount в строках денежных потоков.
+    entity_refs:
+      - entity-cash-flow-line
+    priority: high
+    acceptance_criteria:
+      - Плановое задание загрузки факта по расписанию
+      - Ручной запуск загрузки администратором
+      - Логирование результатов загрузки (успех/ошибки/количество записей)
+      - Маркировка строк source = accounting_system
+    module_candidates:
+      - id: csv-data-source
+        registry_path: connectors/csv-data-source
+        rationale: Промежуточный коннектор для файлового обмена с учётными системами.
+
+  - id: REQ-010
+    title: Формирование отчётов PDF и Excel
+    description: >
+      Система автоматически формирует отчёты в формате PDF и Excel
+      для рассмотрения менеджментом и органами управления.
+    entity_refs:
+      - entity-report
+      - entity-financial-result
+    priority: high
+    acceptance_criteria:
+      - Генерация консолидированного отчёта в PDF и Excel
+      - Генерация отчёта по отдельному объекту
+      - Отчёт содержит данные из всех входных форм и консолидации
+    module_candidates:
+      - id: mod-pivot-tabulator
+        registry_path: source_code/mod-pivot-tabulator
+        rationale: Экспорт табличных данных в Excel/CSV.
+
+  - id: REQ-011
+    title: Справочник строительных объектов
+    description: >
+      Администратор и бюджетный аналитик ведут справочник строительных
+      объектов с датами начала и завершения строительства.
+    entity_refs:
+      - entity-construction-object
+      - entity-input-form
+    priority: high
+    acceptance_criteria:
+      - CRUD для строительных объектов
+      - Валидация construction_end ≥ construction_start
+      - Уникальность кода объекта
+    module_candidates:
+      - id: fastapi-crud-generator
+        registry_path: templates/fastapi-crud-generator
+        rationale: CRUD API для справочника объектов.
+      - id: react-crud-pages
+        registry_path: templates/react-crud-pages
+        rationale: UI для управления справочником.
+
+  - id: REQ-012
+    title: Импорт данных из Excel-модели
+    description: >
+      Система загружает исходные данные из Excel-модели заказчика
+      с валидацией полноты и корректности переноса.
+    entity_refs:
+      - entity-cash-flow-line
+      - entity-input-form
+    priority: medium
+    acceptance_criteria:
+      - Импорт файла Excel/CSV по шаблону методологии
+      - Отчёт о расхождениях при переносе
+      - Блокировка консолидации при неполных данных
+    module_candidates:
+      - id: csv-data-source
+        registry_path: connectors/csv-data-source
+        rationale: Чтение и валидация импортируемых файлов.
+
+  - id: REQ-013
+    title: Контроль полноты данных
+    description: >
+      Система гарантирует, что все данные из всех входных форм
+      отражены в выходных формах и консолидации.
+    entity_refs:
+      - entity-input-form
+      - entity-cash-flow-line
+      - entity-financial-result
+    priority: medium
+    acceptance_criteria:
+      - Проверка полноты перед пересчётом и формированием отчётов
+      - Индикатор заполненности по каждому объекту и форме
+      - Список незаполненных ячеек/форм
+    module_candidates:
+      - id: fastapi-base
+        registry_path: templates/fastapi-base
+        rationale: Базовый каркас для кастомного CompletenessValidator.
+
+  - id: REQ-014
+    title: Разграничение доступа по ролям
+    description: >
+      Руководитель объекта работает только со своим объектом;
+      менеджмент и органы управления — с консолидированными отчётами.
+    entity_refs:
+      - entity-user
+      - entity-construction-object
+    priority: medium
+    acceptance_criteria:
+      - project_manager видит и редактирует только свой объект
+      - management и governance имеют доступ к отчётам и консолидации
+      - budget_analyst управляет всеми сценариями
+    module_candidates:
+      - id: auth-jwt
+        registry_path: black_boxes/auth-jwt
+        rationale: JWT с ролями как основа RBAC.
+      - id: basic-security-policy
+        registry_path: policies/basic-security-policy
+        rationale: Политика безопасности и разграничения доступа.

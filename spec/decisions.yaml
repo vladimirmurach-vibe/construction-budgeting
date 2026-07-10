@@ -1,0 +1,110 @@
+decisions:
+  - id: DEC-001
+    title: Выбор табличного компонента для ввода данных
+    status: accepted
+    date: "2026-07-10"
+    context: >
+      REQ-004 требует ввод и корректировку данных по формам методологии
+      в интерактивной таблице с группировкой по объектам и периодам.
+    alternatives:
+      - id: mod-pivot-tabulator
+        pros: [MIT-лицензия, production, виртуализация, экспорт Excel]
+        cons: [Нет drag-and-drop настройки pivot]
+      - id: mod-pivot-ag-grid-react
+        pros: [Мощные иерархии, production]
+        cons: [Enterprise-функции платные]
+      - id: mod-pivot-handsontable
+        pros: [Excel-подобный интерфейс]
+        cons: [beta, ограничения при >50k записей]
+    decision: mod-pivot-tabulator
+    rationale: >
+      Tabulator — бесплатный (MIT), production-ready, поддерживает
+      группировку, редактирование и экспорт в Excel.
+
+  - id: DEC-002
+    title: Переиспользование модулей прогнозирования для бюджетирования
+    status: accepted
+    date: "2026-07-10"
+    context: >
+      В реестре нет специализированных модулей расчёта бюджета
+      строительных объектов; модули прогнозирования покрывают
+      агрегацию, корректировки и пересчёт.
+    alternatives:
+      - id: forecast-modules-bundle
+        modules: [consensus-calculator, adjustment-disaggregation, forecast-aggregation]
+        pros: [Готовые сервисы, проверенная производительность]
+        cons: [Требуется адаптация терминологии и измерений]
+      - id: custom-calculation
+        pros: [Полный контроль]
+        cons: [Длительная разработка, нет шаблона в реестре]
+    decision: forecast-modules-bundle
+    rationale: >
+      Адаптация consensus-calculator (base+adjustment), adjustment-disaggregation
+      (распределение корректировок) и forecast-aggregation (консолидация)
+      сокращает время разработки.
+
+  - id: DEC-003
+    title: Загрузка факта из учётных систем
+    status: accepted
+    date: "2026-07-10"
+    context: REQ-009 требует автоматическую загрузку фактических данных.
+    alternatives:
+      - id: csv-data-source
+        pros: [Готовый коннектор, production]
+        cons: [Файловый обмен, не real-time API]
+      - id: custom-api-connector
+        pros: [Прямая интеграция]
+        cons: [Нет модуля в реестре, зависит от системы заказчика]
+    decision: csv-data-source
+    rationale: >
+      На первом этапе — файловый обмен через csv-data-source.
+      Прямое API — после уточнения GAP-002.
+
+  - id: DEC-004
+    title: Генерация PDF-отчётов
+    status: accepted
+    date: "2026-07-10"
+    context: REQ-010 требует PDF и Excel; в реестре нет PDF-модуля.
+    alternatives:
+      - id: custom-pdf-service
+        pros: [Полный контроль над макетом]
+        cons: [Кастомная разработка]
+      - id: excel-only
+        pros: [Покрывается Tabulator export]
+        cons: [Не соответствует требованию заказчика]
+    decision: custom-pdf-service
+    rationale: >
+      Excel — через mod-pivot-tabulator; PDF — кастомный сервис
+      (WeasyPrint/ReportLab). Зафиксировано в GAP-003.
+
+  - id: DEC-005
+    title: Отложение прямой интеграции с 1С/SAP
+    status: accepted
+    date: "2026-07-10"
+    context: >
+      Заказчик требует автоматическую загрузку факта, но конкретные
+      системы не определены (GAP-002).
+    decision: defer
+    rationale: >
+      MVP — файловый обмен; прямая интеграция после уточнения
+      учётных систем заказчика.
+
+  - id: DEC-006
+    title: Выбор библиотеки визуализации
+    status: accepted
+    date: "2026-07-10"
+    context: REQ-008 требует графики отклонений между версиями бюджета.
+    alternatives:
+      - id: mod-chart-echarts
+        pros: [Apache-2.0, production, богатые типы графиков]
+        cons: []
+      - id: mod-chart-chartjs
+        pros: [Простота, MIT]
+        cons: [Меньше возможностей для сложных финансовых графиков]
+      - id: mod-chart-plotly
+        pros: [Интерактивность]
+        cons: [Тяжелее по размеру бандла]
+    decision: mod-chart-echarts
+    rationale: >
+      ECharts — production, Apache-2.0, хорошо подходит для финансовых
+      time-series и bar-сравнений версий.

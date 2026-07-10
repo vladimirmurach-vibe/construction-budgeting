@@ -1,0 +1,116 @@
+rules:
+  - id: VAL-001
+    name: Обязательные поля спецификации
+    scope: index.yaml
+    checks:
+      - field: project.id
+        rule: not_empty
+      - field: project.name
+        rule: not_empty
+      - field: business_goal
+        rule: not_empty
+      - field: solution.type
+        rule: not_empty
+
+  - id: VAL-002
+    name: Ссылочная целостность требований
+    scope: requirements.yaml
+    checks:
+      - rule: every_requirement_has_priority
+        allowed_values: [high, medium, low]
+      - rule: high_requirements_have_acceptance_criteria
+      - rule: high_requirements_have_module_candidates
+      - rule: entity_refs_exist_in_data_yaml
+
+  - id: VAL-003
+    name: Согласованность модулей
+    scope: [modules.yaml, architecture.yaml, requirements.yaml]
+    checks:
+      - rule: architecture_selected_modules_subset_of_modules_yaml
+      - rule: modules_yaml_matches_architecture_selected_modules
+      - rule: requirement_mapping_modules_in_selected_modules
+      - rule: module_registry_paths_valid
+
+  - id: VAL-004
+    name: Покрытие приёмочных тестов
+    scope: acceptance.yaml
+    checks:
+      - rule: every_high_requirement_has_acceptance_test
+      - rule: acceptance_test_requirement_id_exists
+
+  - id: VAL-005
+    name: Валидация данных денежных потоков
+    scope: data
+    checks:
+      - entity: entity-cash-flow-line
+        field: base_amount
+        rule: numeric
+      - entity: entity-cash-flow-line
+        field: adjustment
+        rule: numeric
+        nullable: true
+      - entity: entity-cash-flow-line
+        field: consensus_amount
+        rule: numeric
+      - entity: entity-cash-flow-line
+        field: period
+        rule: regex
+        pattern: "^\\d{4}-(0[1-9]|1[0-2])$"
+      - entity: entity-cash-flow-line
+        rule: consensus_equals_base_plus_adjustment
+
+  - id: VAL-006
+    name: Валидация строительных объектов
+    scope: data
+    checks:
+      - entity: entity-construction-object
+        field: code
+        rule: unique
+      - entity: entity-construction-object
+        rule: construction_end_gte_construction_start
+
+  - id: VAL-007
+    name: Валидация сценариев
+    scope: business
+    checks:
+      - entity: entity-scenario
+        rule: single_object_requires_construction_object_id
+      - entity: entity-scenario
+        rule: scenario_status_transitions
+        allowed:
+          draft: [calculated, archived]
+          calculated: [approved, draft, archived]
+          approved: [archived]
+          archived: []
+      - rule: recalculation_sla
+        description: Пересчёт сценария не более 20 минут
+
+  - id: VAL-008
+    name: Полнота данных
+    scope: business
+    checks:
+      - rule: completeness_before_recalculation
+        description: Пересчёт блокируется при неполных входных формах
+      - rule: completeness_before_report
+        description: Отчёт не формируется при неполных данных
+      - rule: all_forms_in_consolidation
+        description: Все данные из входных форм отражены в консолидации
+
+  - id: VAL-009
+    name: Безопасность
+    scope: security
+    policy_ref: basic-security-policy
+    checks:
+      - rule: jwt_required_for_api
+      - rule: https_only_in_production
+      - rule: project_manager_object_scope
+      - rule: no_secrets_in_source_code
+
+  - id: VAL-010
+    name: История версий
+    scope: history.yaml
+    checks:
+      - rule: latest_version_matches_index
+      - rule: initial_entry_exists
+        version: "0.1.0"
+        status: draft

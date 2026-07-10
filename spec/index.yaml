@@ -1,0 +1,41 @@
+version: "0.1.0"
+status: draft
+created_at: "2026-07-10"
+updated_at: "2026-07-10"
+
+project:
+  id: construction-budgeting
+  name: Бюджетирование строительных объектов
+  repository: https://github.com/vladimirmurach-vibe/construction-budgeting
+
+business_goal: >
+  Заменить трудоёмкую Excel-модель инструментом быстрого пересчёта сценариев
+  бюджета строительных объектов с хранением всех версий расчёта, консолидацией
+  финансового результата и автоматической загрузкой фактических данных.
+
+solution:
+  type: web-application
+  description: >
+    Веб-система расчёта денежных потоков и финансового результата по
+    строительным объектам: создание сценариев бюджета/прогноза (с корректировками)
+    для всех объектов или отдельного объекта, оперативный пересчёт (до 20 минут),
+    сравнение версий, консолидация на горизонте планирования, отчёты PDF/Excel.
+
+module_registry:
+  url: https://github.com/vladimirmurach-vibe/module-registry
+  branch: master
+
+spec_files:
+  - index.yaml
+  - business.yaml
+  - data.yaml
+  - requirements.yaml
+  - ui.yaml
+  - modules.yaml
+  - architecture.yaml
+  - acceptance.yaml
+  - assumptions.yaml
+  - gaps.yaml
+  - validation.yaml
+  - decisions.yaml
+  - history.yaml

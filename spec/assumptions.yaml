@@ -1,0 +1,89 @@
+assumptions:
+  - id: ASM-001
+    description: >
+      Excel-модель заказчика будет получена на этапе настройки системы.
+      До этого используется конфигурируемая схема входных форм с типовым
+      набором: денежные потоки по статьям, периодам и объектам.
+    impact: high
+    related_requirements: [REQ-005, REQ-012, REQ-013]
+    closes_gap: GAP-001
+
+  - id: ASM-002
+    description: >
+      Горизонт планирования определяется датами строительства объектов:
+      от min(construction_start) до max(construction_end) по портфелю.
+    impact: high
+    related_requirements: [REQ-007]
+
+  - id: ASM-003
+    description: >
+      Загрузка факта реализуется через универсальный импорт CSV/Excel
+      с настраиваемым маппингом полей. Конкретная учётная система
+      подключается позже без изменения архитектуры.
+    impact: high
+    related_requirements: [REQ-009]
+    closes_gap: GAP-002
+
+  - id: ASM-004
+    description: >
+      PDF-отчёты формируются кастомным сервисом (WeasyPrint/ReportLab),
+      т.к. в module-registry нет готового модуля PDF-генерации.
+    impact: medium
+    related_requirements: [REQ-010]
+    closes_gap: GAP-003
+
+  - id: ASM-005
+    description: >
+      Модули consensus-calculator, adjustment-disaggregation и
+      forecast-aggregation адаптируются под домен строительного
+      бюджетирования без изменения базовой логики.
+    impact: medium
+    related_requirements: [REQ-004, REQ-005, REQ-006, REQ-007]
+
+  - id: ASM-006
+    description: >
+      Валюта расчёта — рубли (RUB), мультивалютность не требуется.
+    impact: low
+    related_requirements: [REQ-005]
+
+  - id: ASM-007
+    description: >
+      Нагрузочный профиль MVP: до 50 строительных объектов,
+      до 100 000 строк денежных потоков, до 20 одновременных пользователей.
+    impact: medium
+    related_requirements: [REQ-006, REQ-007]
+    closes_gap: GAP-005
+
+  - id: ASM-008
+    description: >
+      Пользователи работают с десктопного браузера; Excel остаётся
+      справочным инструментом на этапе миграции.
+    impact: medium
+    related_requirements: [REQ-004, REQ-012]
+
+  - id: ASM-009
+    description: >
+      Отчёты для менеджмента формируются по шаблону по умолчанию:
+      консолидированный финансовый результат (выручка, затраты, прибыль)
+      в разрезе объектов и периодов. Макеты уточняются на демонстрации.
+    impact: medium
+    related_requirements: [REQ-010]
+    closes_gap: GAP-004
+
+  - id: ASM-010
+    description: >
+      График внедрения — поэтапный: (1) MVP с пересчётом и консолидацией,
+      (2) импорт и загрузка факта, (3) отчёты и приёмка.
+      Конкретные даты согласуются при старте разработки.
+    impact: low
+    related_requirements: []
+    closes_gap: GAP-006
+
+  - id: ASM-011
+    description: >
+      Заказчик не может предоставить ответы на открытые вопросы
+      на этапе спецификации; уточнение переносится на этап настройки
+      и демонстрации системы.
+    impact: high
+    related_requirements: []
+    closes_gap: [GAP-001, GAP-002, GAP-004, GAP-005, GAP-006]
