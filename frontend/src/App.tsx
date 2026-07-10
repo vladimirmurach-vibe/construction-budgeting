@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, NavLink, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
+import { authApi } from './api/client';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ScenariosPage from './pages/ScenariosPage';
@@ -9,14 +10,16 @@ import ReportsPage from './pages/ReportsPage';
 import ObjectsPage from './pages/ObjectsPage';
 import ImportPage from './pages/ImportPage';
 import FactLoadingPage from './pages/FactLoadingPage';
-import { authApi } from './api/client';
 
-function Layout({ children, onLogout }: { children: React.ReactNode; onLogout: () => void }) {
+function Shell({ children, onLogout, user }: { children: React.ReactNode; onLogout: () => void; user: { email: string; role: string } | null }) {
   return (
-    <div className="app-layout">
+    <div className="app-shell">
       <aside className="sidebar">
-        <h1>Бюджетирование строительных объектов</h1>
-        <nav>
+        <div className="brand-block">
+          <p className="logo">СВОД</p>
+          <p className="sub">Бюджетирование строительных объектов</p>
+        </div>
+        <nav className="nav">
           <NavLink to="/dashboard">Консолидация</NavLink>
           <NavLink to="/scenarios">Сценарии</NavLink>
           <NavLink to="/scenarios/compare">Сравнение версий</NavLink>
@@ -25,7 +28,16 @@ function Layout({ children, onLogout }: { children: React.ReactNode; onLogout: (
           <NavLink to="/import">Импорт из Excel</NavLink>
           <NavLink to="/admin/fact-loading">Загрузка факта</NavLink>
         </nav>
-        <button className="btn btn-secondary" style={{ marginTop: '2rem' }} onClick={onLogout}>Выход</button>
+        <div className="sidebar-foot">
+          <div className="user-chip">
+            {user?.email}
+            <br />
+            {user?.role}
+          </div>
+          <button className="btn btn-secondary" onClick={onLogout}>
+            Выход
+          </button>
+        </div>
       </aside>
       <main className="main">{children}</main>
     </div>
@@ -34,37 +46,70 @@ function Layout({ children, onLogout }: { children: React.ReactNode; onLogout: (
 
 function AppRoutes() {
   const [authed, setAuthed] = useState(!!localStorage.getItem('token'));
+  const [user, setUser] = useState<{ email: string; role: string } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (authed) authApi.me().catch(() => { localStorage.removeItem('token'); setAuthed(false); });
+    if (!authed) return;
+    authApi
+      .me()
+      .then(setUser)
+      .catch(() => {
+        localStorage.removeItem('token');
+        setAuthed(false);
+      });
   }, [authed]);
 
-  if (!authed) return <LoginPage onLogin={() => { setAuthed(true); navigate('/dashboard'); }} />;
+  function logout() {
+    localStorage.removeItem('token');
+    setAuthed(false);
+    setUser(null);
+    navigate('/login');
+  }
 
-  const logout = () => { localStorage.removeItem('token'); setAuthed(false); };
+  if (!authed) {
+    return <LoginPage onSuccess={() => setAuthed(true)} />;
+  }
 
   return (
-    <Layout onLogout={logout}>
+    <Shell onLogout={logout} user={user}>
       <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/scenarios" element={<ScenariosPage />} />
-        <Route path="/scenarios/:scenarioId/grid" element={<ScenarioGridPage />} />
         <Route path="/scenarios/compare" element={<ComparePage />} />
+        <Route path="/scenarios/:scenarioId/grid" element={<ScenarioGridPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/objects" element={<ObjectsPage />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/admin/fact-loading" element={<FactLoadingPage />} />
-        <Route path="*" element={<Navigate to="/dashboard" />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
-    </Layout>
+    </Shell>
   );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <AppRoutes />
+      <Routes>
+        <Route path="/login" element={<LoginGate />} />
+        <Route path="/*" element={<AppRoutes />} />
+      </Routes>
     </BrowserRouter>
+  );
+}
+
+function LoginGate() {
+  const navigate = useNavigate();
+  if (localStorage.getItem('token')) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return (
+    <LoginPage
+      onSuccess={() => {
+        navigate('/dashboard');
+      }}
+    />
   );
 }

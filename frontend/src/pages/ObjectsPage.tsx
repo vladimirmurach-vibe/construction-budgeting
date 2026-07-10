@@ -1,56 +1,106 @@
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
 import { objectsApi } from '../api/client';
 
+type Obj = {
+  id: number;
+  name: string;
+  code: string;
+  construction_start: string;
+  construction_end: string;
+  status: string;
+};
+
 export default function ObjectsPage() {
-  const [objects, setObjects] = useState<Record<string, unknown>[]>([]);
-  const { register, handleSubmit, reset } = useForm();
+  const [items, setItems] = useState<Obj[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    code: '',
+    construction_start: '2025-01-01',
+    construction_end: '2027-12-31',
+    status: 'in_progress',
+  });
+  const [error, setError] = useState('');
 
-  const load = () => objectsApi.list().then(setObjects);
-  useEffect(() => { load(); }, []);
-
-  const create = async (data: Record<string, string>) => {
-    await objectsApi.create(data);
-    reset();
+  const load = () => objectsApi.list().then(setItems);
+  useEffect(() => {
     load();
-  };
+  }, []);
+
+  async function create() {
+    setError('');
+    try {
+      await objectsApi.create(form);
+      setOpen(false);
+      await load();
+    } catch {
+      setError('Проверьте даты и уникальность кода');
+    }
+  }
 
   return (
     <div>
-      <h2>Строительные объекты</h2>
-      <div className="card">
-        <form onSubmit={handleSubmit(create)}>
-          <div className="form-group"><label>Название</label><input {...register('name')} required /></div>
-          <div className="form-group"><label>Код</label><input {...register('code')} required /></div>
-          <div className="form-group"><label>Начало</label><input type="date" {...register('construction_start')} required /></div>
-          <div className="form-group"><label>Окончание</label><input type="date" {...register('construction_end')} required /></div>
-          <div className="form-group">
-            <label>Статус</label>
-            <select {...register('status')}>
-              <option value="planning">Планирование</option>
-              <option value="in_progress">В работе</option>
-              <option value="completed">Завершён</option>
-            </select>
-          </div>
-          <button className="btn" type="submit">Добавить</button>
-        </form>
+      <div className="page-head">
+        <div>
+          <h1>Объекты</h1>
+          <p>Справочник строительных объектов и горизонт планирования</p>
+        </div>
+        <button className="btn btn-primary" style={{ width: 'auto' }} onClick={() => setOpen(true)}>
+          Добавить объект
+        </button>
       </div>
-      <div className="card">
+      <div className="panel table-wrap">
         <table className="data">
-          <thead><tr><th>Код</th><th>Название</th><th>Начало</th><th>Окончание</th><th>Статус</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Код</th>
+              <th>Название</th>
+              <th>Начало</th>
+              <th>Окончание</th>
+              <th>Статус</th>
+            </tr>
+          </thead>
           <tbody>
-            {objects.map((o) => (
-              <tr key={o.id as string}>
-                <td>{o.code as string}</td>
-                <td>{o.name as string}</td>
-                <td>{o.construction_start as string}</td>
-                <td>{o.construction_end as string}</td>
-                <td>{o.status as string}</td>
+            {items.map((o) => (
+              <tr key={o.id}>
+                <td>{o.code}</td>
+                <td>{o.name}</td>
+                <td>{o.construction_start}</td>
+                <td>{o.construction_end}</td>
+                <td>
+                  <span className="badge">{o.status}</span>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {open && (
+        <div className="modal-backdrop" onClick={() => setOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Новый объект</h3>
+            {(['name', 'code', 'construction_start', 'construction_end'] as const).map((key) => (
+              <div className="field" key={key}>
+                <label>{key}</label>
+                <input
+                  type={key.includes('construction') ? 'date' : 'text'}
+                  value={form[key]}
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                />
+              </div>
+            ))}
+            {error && <p className="error-text">{error}</p>}
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setOpen(false)}>
+                Отмена
+              </button>
+              <button className="btn btn-primary" style={{ width: 'auto' }} onClick={create}>
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

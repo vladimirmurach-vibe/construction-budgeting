@@ -1,217 +1,232 @@
-"""Приёмочные тесты из acceptance.yaml (ACC-REQ-001..011)."""
+from pathlib import Path
 
 
-def _seed_scenario(client, auth_headers):
-    scenarios = client.get("/api/scenarios", headers=auth_headers).json()
-    for s in scenarios:
-        if s["name"] == "Демо-сценарий":
-            return s["id"]
-    return scenarios[0]["id"]
+def test_health(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert "СВОД" in response.json()["app_name"]
 
 
-def test_acc_req_001_auth(client):
-    resp = client.post("/api/auth/login", json={"email": "analyst@example.com", "password": "valid_password"})
-    assert resp.status_code == 200
-    assert "access_token" in resp.json()
-
-    resp = client.get("/api/scenarios")
-    assert resp.status_code == 401
-
-
-def test_acc_req_002_version_storage(client, auth_headers):
-    resp = client.post(
-        "/api/scenarios",
-        json={"name": "Бюджет 2026 v1", "type": "budget", "scope": "all_objects"},
-        headers=auth_headers,
+def test_acc_001_authentication(client):
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "analyst@example.com", "password": "valid_password"},
     )
-    assert resp.status_code == 201
-    scenario_id = resp.json()["id"]
-    assert "version_number" in resp.json()
+    assert response.status_code == 200
+    assert "access_token" in response.json()
 
-    client.post(f"/api/scenarios/{scenario_id}/recalculate", headers=auth_headers)
+    unauthorized = client.get("/api/scenarios")
+    assert unauthorized.status_code == 401
 
-    resp = client.post(
+    me = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {response.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["role"] == "budget_analyst"
+
+
+def test_acc_002_versions_recalculate_and_archive_listing(client, analyst_headers):
+    created = client.post(
         "/api/scenarios",
+        headers=analyst_headers,
+        json={"name": "Бюджет 2026 v1", "type": "budget", "scope": "all_objects"},
+    )
+    assert created.status_code == 201, created.text
+    scenario_id = created.json()["id"]
+    assert created.json()["version_number"] == 1
+
+    recalc = client.post(f"/api/scenarios/{scenario_id}/recalculate", headers=analyst_headers)
+    assert recalc.status_code == 200, recalc.text
+
+    child = client.post(
+        "/api/scenarios",
+        headers=analyst_headers,
         json={
             "name": "Бюджет 2026 v2",
             "type": "budget",
             "scope": "all_objects",
             "parent_version_id": scenario_id,
         },
-        headers=auth_headers,
     )
-    assert resp.status_code == 201
-    assert resp.json()["version_number"] == 2
+    assert child.status_code == 201, child.text
+    assert child.json()["version_number"] == 2
 
-    resp = client.get("/api/scenarios?include_archived=true", headers=auth_headers)
-    assert resp.status_code == 200
-    assert len(resp.json()) >= 2
+    listed = client.get("/api/scenarios?include_archived=true", headers=analyst_headers)
+    assert listed.status_code == 200
+    assert len(listed.json()) >= 2
 
 
-def test_acc_req_003_scenario_creation(client, auth_headers):
-    resp = client.post(
+def test_acc_003_scenario_creation_validation(client, analyst_headers, object_a):
+    forecast = client.post(
         "/api/scenarios",
-        json={"name": "Прогноз — все объекты", "type": "forecast", "scope": "all_objects"},
-        headers=auth_headers,
+        headers=analyst_headers,
+        json={"name": "Прогноз - все объекты", "type": "forecast", "scope": "all_objects"},
     )
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["type"] == "forecast"
-    assert body["scope"] == "all_objects"
-    assert body["status"] == "draft"
+    assert forecast.status_code == 201
+    assert forecast.json()["type"] == "forecast"
+    assert forecast.json()["scope"] == "all_objects"
+    assert forecast.json()["status"] == "draft"
 
-    objects = client.get("/api/construction-objects", headers=auth_headers).json()
-    obj_id = objects[0]["id"]
-    resp = client.post(
+    single = client.post(
         "/api/scenarios",
+        headers=analyst_headers,
         json={
-            "name": "Бюджет — объект А",
+            "name": "Бюджет - объект А",
             "type": "budget",
             "scope": "single_object",
-            "construction_object_id": obj_id,
+            "construction_object_id": object_a["id"],
         },
-        headers=auth_headers,
     )
-    assert resp.status_code == 201
-    assert resp.json()["scope"] == "single_object"
+    assert single.status_code == 201, single.text
+    assert single.json()["scope"] == "single_object"
 
-    resp = client.post(
+    invalid = client.post(
         "/api/scenarios",
+        headers=analyst_headers,
         json={"name": "Без объекта", "type": "budget", "scope": "single_object"},
-        headers=auth_headers,
     )
-    assert resp.status_code == 422
+    assert invalid.status_code == 422
 
 
-def test_acc_req_004_cash_flow_adjustment(client, auth_headers):
-    scenario_id = _seed_scenario(client, auth_headers)
-    lines = client.get(f"/api/cash-flow-lines?scenario_id={scenario_id}", headers=auth_headers).json()
-    line = next(l for l in lines if l["period"] == "2026-03" and l["form_code"] == "FORM-01")
-    base = line["base_amount"]
-    resp = client.patch(
+def test_acc_004_patch_cash_flow_recalculates_consensus(client, analyst_headers, demo_scenario):
+    lines = client.get(
+        f"/api/cash-flow-lines?scenario_id={demo_scenario['id']}",
+        headers=analyst_headers,
+    )
+    assert lines.status_code == 200
+    line = next(item for item in lines.json() if item["line_item"] == "Материалы")
+
+    patched = client.patch(
         f"/api/cash-flow-lines/{line['id']}",
-        json={"adjustment": 50000},
-        headers=auth_headers,
+        headers=analyst_headers,
+        json={"adjustment": 50000.0},
     )
-    assert resp.status_code == 200
-    assert resp.json()["consensus_amount"] == base + 50000
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["consensus_amount"] == line["base_amount"] + 50000.0
 
 
-def test_acc_req_005_financial_result(client, auth_headers):
-    scenario_id = _seed_scenario(client, auth_headers)
-    client.post(f"/api/scenarios/{scenario_id}/recalculate", headers=auth_headers)
-    objects = client.get("/api/construction-objects", headers=auth_headers).json()
-    obj_id = objects[0]["id"]
-    resp = client.get(
-        f"/api/financial-results?scenario_id={scenario_id}&construction_object_id={obj_id}",
-        headers=auth_headers,
+def test_acc_005_and_006_recalculate_financial_results(client, analyst_headers, demo_scenario, object_a):
+    recalc = client.post(f"/api/scenarios/{demo_scenario['id']}/recalculate", headers=analyst_headers)
+    assert recalc.status_code == 200, recalc.text
+    assert recalc.json()["status"] == "calculated"
+    assert recalc.json()["calculated_at"] is not None
+
+    results = client.get(
+        f"/api/financial-results?scenario_id={demo_scenario['id']}&construction_object_id={object_a['id']}",
+        headers=analyst_headers,
     )
-    assert resp.status_code == 200
-    for row in resp.json():
-        assert "revenue" in row
-        assert "costs" in row
-        assert "profit" in row
-        assert abs(row["profit"] - (row["revenue"] - row["costs"])) < 0.01
+    assert results.status_code == 200
+    assert results.json()
+    row = next(item for item in results.json() if item["revenue"] > 0)
+    assert {"revenue", "costs", "profit"} <= set(row)
+    assert row["profit"] == row["revenue"] - row["costs"]
 
 
-def test_acc_req_006_recalculation(client, auth_headers):
-    scenario_id = _seed_scenario(client, auth_headers)
-    resp = client.post(f"/api/scenarios/{scenario_id}/recalculate", headers=auth_headers)
-    assert resp.status_code == 200
-    resp = client.get(f"/api/scenarios/{scenario_id}", headers=auth_headers)
-    assert resp.json()["status"] == "calculated"
-    assert resp.json()["calculated_at"] is not None
+def test_acc_007_consolidation(client, analyst_headers, demo_scenario):
+    client.post(f"/api/scenarios/{demo_scenario['id']}/recalculate", headers=analyst_headers)
+    consolidated = client.get(
+        f"/api/financial-results/consolidated?scenario_id={demo_scenario['id']}",
+        headers=analyst_headers,
+    )
+    assert consolidated.status_code == 200
+    rows = consolidated.json()
+    assert rows
+    assert all(row["is_consolidated"] for row in rows)
+    assert {"2026-01", "2026-09"} <= {row["period"] for row in rows}
 
-
-def test_acc_req_007_consolidation(client, auth_headers):
-    scenario_id = _seed_scenario(client, auth_headers)
-    client.post(f"/api/scenarios/{scenario_id}/recalculate", headers=auth_headers)
-    resp = client.get(f"/api/financial-results/consolidated?scenario_id={scenario_id}", headers=auth_headers)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data) > 0
-    assert data[0]["is_consolidated"] is True
-    assert "profit" in data[0]
-    assert "period" in data[0]
-
-
-def test_acc_req_008_version_compare(client, auth_headers):
-    scenario_id = _seed_scenario(client, auth_headers)
-    s2 = client.post(
-        "/api/scenarios",
-        json={"name": "Compare v2", "type": "budget", "scope": "all_objects", "parent_version_id": scenario_id},
-        headers=auth_headers,
+    object_rows = client.get(
+        f"/api/financial-results?scenario_id={demo_scenario['id']}",
+        headers=analyst_headers,
     ).json()
-    client.post(f"/api/scenarios/{scenario_id}/recalculate", headers=auth_headers)
-    client.post(f"/api/scenarios/{s2['id']}/recalculate", headers=auth_headers)
-    resp = client.get(
-        f"/api/scenarios/compare?version_a={scenario_id}&version_b={s2['id']}",
-        headers=auth_headers,
+    assert sum(row["profit"] for row in rows) == sum(row["profit"] for row in object_rows)
+
+
+def test_acc_008_compare_versions(client, analyst_headers):
+    v1 = client.post(
+        "/api/scenarios",
+        headers=analyst_headers,
+        json={"name": "Compare v1", "type": "budget", "scope": "all_objects"},
+    ).json()
+    client.post(f"/api/scenarios/{v1['id']}/recalculate", headers=analyst_headers)
+    v2 = client.post(
+        "/api/scenarios",
+        headers=analyst_headers,
+        json={
+            "name": "Compare v2",
+            "type": "budget",
+            "scope": "all_objects",
+            "parent_version_id": v1["id"],
+        },
+    ).json()
+    lines = client.get(f"/api/cash-flow-lines?scenario_id={v2['id']}", headers=analyst_headers).json()
+    client.patch(
+        f"/api/cash-flow-lines/{lines[0]['id']}",
+        headers=analyst_headers,
+        json={"adjustment": 1000.0},
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data) > 0
-    assert "variance" in data[0]
-    assert "variance_percent" in data[0]
+    client.post(f"/api/scenarios/{v2['id']}/recalculate", headers=analyst_headers)
 
-
-def test_acc_req_009_fact_loading(client, admin_headers, tmp_path, monkeypatch):  # noqa: ARG001
-    from app.core.config import settings
-    import_dir = tmp_path / "imports"
-    import_dir.mkdir()
-    fact_file = import_dir / "fact_data.csv"
-    fact_file.write_text(
-        "construction_object_code,form_code,line_item,period,actual_amount\n"
-        "OBJ-A,FORM-01,Материалы,2026-01,95000\n",
-        encoding="utf-8",
+    compared = client.get(
+        f"/api/scenarios/compare?version_a={v1['id']}&version_b={v2['id']}",
+        headers=analyst_headers,
     )
-    monkeypatch.setattr(settings, "fact_import_dir", str(import_dir))
-    resp = client.post("/api/fact-loading/trigger", headers=admin_headers)
-    assert resp.status_code == 200
-    assert "records_loaded" in resp.json()
-    resp = client.get("/api/fact-loading/log", headers=admin_headers)
-    assert resp.status_code == 200
-    assert len(resp.json()) > 0
+    assert compared.status_code == 200, compared.text
+    assert "variance" in compared.json()[0]
+    assert "variance_percent" in compared.json()[0]
 
 
-def test_acc_req_010_reports(client, auth_headers):
-    scenario_id = _seed_scenario(client, auth_headers)
-    client.post(f"/api/scenarios/{scenario_id}/recalculate", headers=auth_headers)
-    for fmt in ["excel", "pdf"]:
-        resp = client.post(
+def test_acc_009_fact_loading(client, admin_headers):
+    triggered = client.post("/api/fact-loading/trigger", headers=admin_headers)
+    assert triggered.status_code == 200, triggered.text
+    assert triggered.json()["records_loaded"] >= 1
+
+    token = admin_headers
+    lines = client.get("/api/cash-flow-lines?source=accounting_system", headers=token)
+    assert lines.status_code == 200
+    assert len(lines.json()) >= 1
+
+    logs = client.get("/api/fact-loading/log", headers=admin_headers)
+    assert logs.status_code == 200
+    assert {"status", "timestamp"} <= set(logs.json()[0])
+
+
+def test_acc_010_reports(client, analyst_headers, demo_scenario):
+    client.post(f"/api/scenarios/{demo_scenario['id']}/recalculate", headers=analyst_headers)
+    for report_format in ["excel", "pdf"]:
+        response = client.post(
             "/api/reports/generate",
-            json={"scenario_id": scenario_id, "type": "consolidated", "format": fmt},
-            headers=auth_headers,
+            headers=analyst_headers,
+            json={"scenario_id": demo_scenario["id"], "type": "consolidated", "format": report_format},
         )
-        assert resp.status_code == 201
-        assert "file_path" in resp.json()
+        assert response.status_code == 201, response.text
+        assert "file_path" in response.json()
+        assert Path(response.json()["file_path"]).exists()
 
 
-def test_acc_req_011_construction_objects(client, auth_headers):
-    resp = client.post(
+def test_acc_011_construction_object_validation(client, analyst_headers):
+    ok = client.post(
         "/api/construction-objects",
+        headers=analyst_headers,
         json={
             "name": "ЖК Северный",
-            "code": "OBJ-NEW",
+            "code": "OBJ-003",
             "construction_start": "2025-01-01",
             "construction_end": "2027-06-30",
             "status": "in_progress",
         },
-        headers=auth_headers,
     )
-    assert resp.status_code == 201
-    resp = client.post(
+    assert ok.status_code == 201, ok.text
+
+    invalid = client.post(
         "/api/construction-objects",
+        headers=analyst_headers,
         json={
             "name": "Некорректный",
-            "code": "OBJ-BAD",
+            "code": "OBJ-004",
             "construction_start": "2027-01-01",
             "construction_end": "2025-01-01",
         },
-        headers=auth_headers,
     )
-    assert resp.status_code == 422
-
-
-def test_health(client):
-    assert client.get("/health").json()["status"] == "ok"
+    assert invalid.status_code == 422

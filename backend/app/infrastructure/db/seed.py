@@ -1,123 +1,120 @@
-"""Начальное наполнение БД: формы, пользователи, демо-объекты."""
 from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.core.security import get_password_hash
+from app.core.security import hash_password
 from app.infrastructure.db.models import (
     CashFlowLine,
-    CashFlowSource,
     ConstructionObject,
     InputForm,
-    ObjectStatus,
     Scenario,
-    ScenarioScope,
-    ScenarioStatus,
-    ScenarioType,
     User,
-    UserRole,
 )
-from app.infrastructure.db.session import SessionLocal
-from app.domain.services.consensus_service import ConsensusService
 
 
-def seed_database():
-    db: Session = SessionLocal()
-    try:
-        if db.query(User).count() > 0:
-            return
+SEED_USERS = [
+    ("analyst@example.com", "valid_password", "budget_analyst"),
+    ("admin@example.com", "admin123", "admin"),
+    ("manager@example.com", "manager123", "project_manager"),
+    ("mgmt@example.com", "mgmt123", "management"),
+]
 
-        forms = [
-            InputForm(code="FORM-01", name="Денежные потоки — материалы", object_bound=True),
-            InputForm(code="FORM-02", name="Денежные потоки — работы", object_bound=True),
-            InputForm(code="FORM-03", name="Выручка", object_bound=True),
-        ]
-        db.add_all(forms)
 
-        obj_a = ConstructionObject(
+def seed_database(db: Session) -> None:
+    seed_users(db)
+    objects = seed_construction_objects(db)
+    seed_input_forms(db)
+    seed_demo_scenario(db, objects)
+    db.commit()
+
+
+def seed_users(db: Session) -> None:
+    for email, password, role in SEED_USERS:
+        if not db.query(User).filter(User.email == email).first():
+            db.add(User(email=email, hashed_password=hash_password(password), role=role))
+
+
+def seed_construction_objects(db: Session) -> list[ConstructionObject]:
+    seeds = [
+        ConstructionObject(
             name="Объект А",
-            code="OBJ-A",
-            construction_start=date(2025, 1, 1),
-            construction_end=date(2027, 6, 30),
-            status=ObjectStatus.in_progress,
-        )
-        obj_b = ConstructionObject(
-            name="ЖК Северный",
             code="OBJ-001",
-            construction_start=date(2025, 6, 1),
-            construction_end=date(2028, 12, 31),
-            status=ObjectStatus.planning,
-        )
-        db.add_all([obj_a, obj_b])
-        db.flush()
+            construction_start=date(2026, 1, 1),
+            construction_end=date(2026, 6, 30),
+            status="in_progress",
+        ),
+        ConstructionObject(
+            name="Объект Б",
+            code="OBJ-002",
+            construction_start=date(2026, 2, 1),
+            construction_end=date(2026, 9, 30),
+            status="in_progress",
+        ),
+    ]
+    for obj in seeds:
+        if not db.query(ConstructionObject).filter(ConstructionObject.code == obj.code).first():
+            db.add(obj)
+    db.flush()
+    return db.query(ConstructionObject).order_by(ConstructionObject.code).all()
 
-        users = [
-            User(
-                email="admin@example.com",
-                full_name="Администратор",
-                hashed_password=get_password_hash("admin123"),
-                role=UserRole.admin,
-            ),
-            User(
-                email="analyst@example.com",
-                full_name="Бюджетный аналитик",
-                hashed_password=get_password_hash("valid_password"),
-                role=UserRole.budget_analyst,
-            ),
-            User(
-                email="manager@example.com",
-                full_name="Руководитель объекта",
-                hashed_password=get_password_hash("manager123"),
-                role=UserRole.project_manager,
-                construction_object_id=obj_a.id,
-            ),
-            User(
-                email="mgmt@example.com",
-                full_name="Менеджмент",
-                hashed_password=get_password_hash("mgmt123"),
-                role=UserRole.management,
-            ),
-        ]
-        db.add_all(users)
 
-        scenario = Scenario(
-            name="Демо-сценарий",
-            type=ScenarioType.budget,
-            scope=ScenarioScope.all_objects,
-            version_number=1,
-            status=ScenarioStatus.draft,
-        )
-        db.add(scenario)
-        db.flush()
+def seed_input_forms(db: Session) -> None:
+    forms = [
+        ("FORM-01", "Форма-01: Доходы и материалы"),
+        ("FORM-02", "Форма-02: Подрядные работы"),
+    ]
+    for code, name in forms:
+        if not db.query(InputForm).filter(InputForm.code == code).first():
+            db.add(InputForm(code=code, name=name, is_required=True))
 
-        consensus = ConsensusService()
-        sample_lines = [
-            ("FORM-01", "Материалы", "2026-01", 100000, 0, obj_a.id),
-            ("FORM-01", "Материалы", "2026-02", 120000, 0, obj_a.id),
-            ("FORM-01", "Материалы", "2026-03", 150000, 0, obj_a.id),
-            ("FORM-02", "Работы", "2026-01", 80000, 0, obj_a.id),
-            ("FORM-02", "Работы", "2026-02", 90000, 0, obj_a.id),
-            ("FORM-03", "Выручка", "2026-01", 300000, 0, obj_a.id),
-            ("FORM-03", "Выручка", "2026-02", 350000, 0, obj_a.id),
-            ("FORM-01", "Материалы", "2026-01", 200000, 0, obj_b.id),
-            ("FORM-02", "Работы", "2026-01", 150000, 0, obj_b.id),
-            ("FORM-03", "Выручка", "2026-01", 500000, 0, obj_b.id),
-        ]
-        for form_code, line_item, period, base, adj, obj_id in sample_lines:
-            db.add(
-                CashFlowLine(
-                    scenario_id=scenario.id,
-                    construction_object_id=obj_id,
-                    form_code=form_code,
-                    line_item=line_item,
-                    period=period,
-                    base_amount=base,
-                    adjustment=adj,
-                    consensus_amount=float(consensus.calculate_for_record(base, adj)),
-                    source=CashFlowSource.manual,
-                )
+
+def seed_demo_scenario(db: Session, objects: list[ConstructionObject]) -> None:
+    if db.query(Scenario).filter(Scenario.name == "Демо бюджет 2026").first():
+        return
+
+    scenario = Scenario(name="Демо бюджет 2026", type="budget", scope="all_objects", version_number=1)
+    db.add(scenario)
+    db.flush()
+
+    for index, obj in enumerate(objects[:2], start=1):
+        revenue_base = 1_000_000.0 * index
+        material_base = 350_000.0 * index
+        works_base = 250_000.0 * index
+        for period in ["2026-02", "2026-03", "2026-04"]:
+            db.add_all(
+                [
+                    CashFlowLine(
+                        scenario_id=scenario.id,
+                        construction_object_id=obj.id,
+                        form_code="FORM-01",
+                        line_item="Revenue",
+                        period=period,
+                        base_amount=revenue_base,
+                        adjustment=0,
+                        consensus_amount=revenue_base,
+                        source="manual",
+                    ),
+                    CashFlowLine(
+                        scenario_id=scenario.id,
+                        construction_object_id=obj.id,
+                        form_code="FORM-01",
+                        line_item="Материалы",
+                        period=period,
+                        base_amount=material_base,
+                        adjustment=0,
+                        consensus_amount=material_base,
+                        source="manual",
+                    ),
+                    CashFlowLine(
+                        scenario_id=scenario.id,
+                        construction_object_id=obj.id,
+                        form_code="FORM-02",
+                        line_item="Подрядные работы",
+                        period=period,
+                        base_amount=works_base,
+                        adjustment=0,
+                        consensus_amount=works_base,
+                        source="manual",
+                    ),
+                ]
             )
-
-        db.commit()
-    finally:
-        db.close()

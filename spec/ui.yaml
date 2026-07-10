@@ -1,6 +1,7 @@
 application:
   id: ui-construction-budgeting
-  name: Бюджетирование строительных объектов
+  name: СВОД — бюджетирование строительных объектов
+  product_brand: СВОД
   shell_module: react-dashboard-template
   language: ru
   theme: light

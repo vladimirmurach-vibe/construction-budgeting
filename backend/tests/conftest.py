@@ -1,41 +1,54 @@
 import os
-
-os.environ.setdefault("DATABASE_URL", "sqlite:///./test_byudzhetirovanie.db")
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
-from app.infrastructure.db.session import Base, engine, SessionLocal
-from app.infrastructure.db.seed import seed_database
 
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 
-@pytest.fixture(autouse=True)
-def fresh_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    seed_database()
+db_path = Path("test.db")
+if db_path.exists():
+    db_path.unlink()
+
+from app.main import app  # noqa: E402
 
 
 @pytest.fixture(scope="session")
-def setup_db():
-    yield
-
-
-@pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-@pytest.fixture
-def auth_headers(client):
-    resp = client.post("/api/auth/login", json={"email": "analyst@example.com", "password": "valid_password"})
-    token = resp.json()["access_token"]
+def _token(client: TestClient, email: str, password: str) -> str:
+    response = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
+
+
+@pytest.fixture(scope="session")
+def analyst_headers(client):
+    token = _token(client, "analyst@example.com", "valid_password")
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def admin_headers(client):
-    resp = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "admin123"})
-    token = resp.json()["access_token"]
+    token = _token(client, "admin@example.com", "admin123")
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def object_a(client, analyst_headers):
+    response = client.get("/api/construction-objects", headers=analyst_headers)
+    assert response.status_code == 200
+    return response.json()[0]
+
+
+@pytest.fixture()
+def demo_scenario(client, analyst_headers):
+    response = client.get("/api/scenarios", headers=analyst_headers)
+    assert response.status_code == 200
+    scenarios = response.json()
+    assert scenarios
+    return scenarios[0]

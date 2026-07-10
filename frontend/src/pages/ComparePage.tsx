@@ -1,62 +1,100 @@
-import { useEffect, useState } from 'react';
-import ChartComponent from '../components/ChartComponent';
-import { scenariosApi } from '../api/client';
+import { useEffect, useMemo, useState } from 'react';
+import { CompareChart } from '../components/ChartComponent';
+import { money, scenariosApi } from '../api/client';
+
+type Scenario = { id: number; name: string; version_number: number };
+type Row = {
+  period: string | null;
+  metric: string;
+  version_a: number;
+  version_b: number;
+  variance: number;
+  variance_percent: number | null;
+};
 
 export default function ComparePage() {
-  const [scenarios, setScenarios] = useState<{ id: string; name: string }[]>([]);
-  const [versionA, setVersionA] = useState('');
-  const [versionB, setVersionB] = useState('');
-  const [compareData, setCompareData] = useState<{ period: string; variance: number; variance_percent: number }[]>([]);
-  const [chartData, setChartData] = useState<{ categories: string[]; series: { name: string; data: number[] }[] } | null>(null);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [a, setA] = useState<number | ''>('');
+  const [b, setB] = useState<number | ''>('');
+  const [rows, setRows] = useState<Row[]>([]);
 
-  useEffect(() => { scenariosApi.list().then(setScenarios); }, []);
+  useEffect(() => {
+    scenariosApi.list(true).then((list: Scenario[]) => {
+      setScenarios(list);
+      if (list[0]) setA(list[0].id);
+      if (list[1]) setB(list[1].id);
+      else if (list[0]) setB(list[0].id);
+    });
+  }, []);
 
-  const compare = async () => {
-    if (!versionA || !versionB) return;
-    const data = await scenariosApi.compare(versionA, versionB);
-    setCompareData(data);
-    const chart = await scenariosApi.compareChart(versionA, versionB);
-    setChartData(chart);
-  };
+  useEffect(() => {
+    if (!a || !b) return;
+    scenariosApi.compare(Number(a), Number(b)).then(setRows).catch(() => setRows([]));
+  }, [a, b]);
+
+  const chartRows = useMemo(
+    () =>
+      rows
+        .filter((r) => r.metric === 'profit' && r.period)
+        .map((r) => ({ period: r.period as string, variance: r.variance })),
+    [rows],
+  );
 
   return (
     <div>
-      <h2>Сравнение версий</h2>
-      <div className="card">
-        <div className="form-group">
-          <label>Версия A</label>
-          <select value={versionA} onChange={(e) => setVersionA(e.target.value)}>
-            <option value="">Выберите</option>
-            {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+      <div className="page-head">
+        <div>
+          <h1>Сравнение версий</h1>
+          <p>Моментальные отклонения между любыми сохранёнными версиями бюджета</p>
         </div>
-        <div className="form-group">
-          <label>Версия B</label>
-          <select value={versionB} onChange={(e) => setVersionB(e.target.value)}>
-            <option value="">Выберите</option>
-            {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </div>
-        <button className="btn" onClick={compare}>Сравнить</button>
       </div>
-      {chartData && (
-        <div className="card">
-          <ChartComponent categories={chartData.categories} series={chartData.series} chartType="bar" />
+      <div className="toolbar">
+        <select value={a} onChange={(e) => setA(Number(e.target.value))}>
+          {scenarios.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} (v{s.version_number})
+            </option>
+          ))}
+        </select>
+        <span>vs</span>
+        <select value={b} onChange={(e) => setB(Number(e.target.value))}>
+          {scenarios.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} (v{s.version_number})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="grid-2">
+        <div className="panel">
+          <CompareChart rows={chartRows} />
         </div>
-      )}
-      <div className="card">
-        <table className="data">
-          <thead><tr><th>Период</th><th>Отклонение</th><th>Отклонение %</th></tr></thead>
-          <tbody>
-            {compareData.map((r) => (
-              <tr key={r.period}>
-                <td>{r.period}</td>
-                <td>{r.variance.toLocaleString()}</td>
-                <td>{r.variance_percent.toFixed(1)}%</td>
+        <div className="panel table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Период</th>
+                <th>Метрика</th>
+                <th>A</th>
+                <th>B</th>
+                <th>Δ</th>
+                <th>Δ%</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.slice(0, 40).map((r, i) => (
+                <tr key={i}>
+                  <td>{r.period || '—'}</td>
+                  <td>{r.metric}</td>
+                  <td>{money(r.version_a)}</td>
+                  <td>{money(r.version_b)}</td>
+                  <td>{money(r.variance)}</td>
+                  <td>{r.variance_percent == null ? '—' : `${r.variance_percent.toFixed(1)}%`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
