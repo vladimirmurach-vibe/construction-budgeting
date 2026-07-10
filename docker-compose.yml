@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: budget
+      POSTGRES_PASSWORD: budget
+      POSTGRES_DB: construction_budgeting
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budget -d construction_budgeting"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://budget:budget@postgres:5432/construction_budgeting
+      JWT_SECRET: dev-secret-change-in-production
+      CORS_ORIGINS: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/reports:/app/reports
+      - ./backend/imports:/app/imports
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  scheduler:
+    profiles: ["scheduler"]
+    build: ./backend
+    command: python -m app.scheduler
+    environment:
+      DATABASE_URL: postgresql+psycopg2://budget:budget@postgres:5432/construction_budgeting
+      FACT_IMPORT_DIR: /app/imports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - ./backend/imports:/app/imports
+
+volumes:
+  pgdata:
